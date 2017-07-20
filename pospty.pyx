@@ -1,5 +1,5 @@
 from libc.stdlib cimport malloc, calloc, free
-from libc.string cimport strerror, memcpy
+from libc.string cimport strerror, memcpy, memset
 from libc.stddef cimport size_t
 from libc.stdint cimport intmax_t
 from libc.errno cimport errno
@@ -173,83 +173,23 @@ class TermiosFlag(Flag):
 class TermiosIFlag(TermiosFlag):
     """flag for termios.c_iflag"""
     pass
-for k, v in {
-    'BRKINT': TermiosIFlag(BRKINT),
-    'ICRNL': TermiosIFlag(ICRNL),
-    'IGNBRK': TermiosIFlag(IGNBRK),
-    'IGNCR': TermiosIFlag(IGNCR),
-    'IGNPAR': TermiosIFlag(IGNPAR),
-    'INLCR': TermiosIFlag(INLCR),
-    'INPCK': TermiosIFlag(INPCK),
-    'ISTRIP': TermiosIFlag(ISTRIP),
-    'IXANY': TermiosIFlag(IXANY),
-    'IXOFF': TermiosIFlag(IXOFF),
-    'IXON': TermiosIFlag(IXON),
-    'PARMRK': TermiosIFlag(PARMRK)}.items():
-    setattr(TermiosIFlag, k, v)
 class TermiosOFlag(TermiosFlag):
     """flag for termios.c_oflag"""
     pass
-for k, v in {
-    'OPOST': TermiosOFlag(OPOST),
-    'ONLCR': TermiosOFlag(ONLCR),
-    'OCRNL': TermiosOFlag(OCRNL),
-    'ONOCR': TermiosOFlag(ONOCR),
-    'ONLRET': TermiosOFlag(ONLRET),
-    'OFILL': TermiosOFlag(OFILL),
-    'NLDLY': TermiosOFlag(NLDLY),
-    'NL0': TermiosOFlag(NL0),
-    'NL1': TermiosOFlag(NL1),
-    'CRDLY': TermiosOFlag(CRDLY),
-    'CR0': TermiosOFlag(CR0),
-    'CR1': TermiosOFlag(CR1),
-    'CR2': TermiosOFlag(CR2),
-    'CR3': TermiosOFlag(CR3),
-    'TABDLY': TermiosOFlag(TABDLY),
-    'TAB0': TermiosOFlag(TAB0),
-    'TAB1': TermiosOFlag(TAB1),
-    'TAB2': TermiosOFlag(TAB2),
-    'TAB3': TermiosOFlag(TAB3),
-    'BSDLY': TermiosOFlag(BSDLY),
-    'BS0': TermiosOFlag(BS0),
-    'BS1': TermiosOFlag(BS1),
-    'VTDLY': TermiosOFlag(VTDLY),
-    'VT0': TermiosOFlag(VT0),
-    'VT1': TermiosOFlag(VT1),
-    'FFDLY': TermiosOFlag(FFDLY),
-    'FF0': TermiosOFlag(FF0),
-    'FF1': TermiosOFlag(FF1)}.items():
-    setattr(TermiosOFlag, k, v)
 class TermiosCFlag(TermiosFlag):
     """flag for termios.c_cflag"""
     pass
-for k, v in {
-    'CSIZE': TermiosCFlag(CSIZE),
-    'CS5': TermiosCFlag(CS5),
-    'CS6': TermiosCFlag(CS6),
-    'CS7': TermiosCFlag(CS7),
-    'CS8': TermiosCFlag(CS8),
-    'CSTOPB': TermiosCFlag(CSTOPB),
-    'CREAD': TermiosCFlag(CREAD),
-    'PARENB': TermiosCFlag(PARENB),
-    'PARODD': TermiosCFlag(PARODD),
-    'HUPCL': TermiosCFlag(HUPCL),
-    'CLOCAL': TermiosCFlag(CLOCAL)}.items():
-    setattr(TermiosCFlag, k, v)
 class TermiosLFlag(TermiosFlag):
     """flag for termios.c_lflag"""
     pass
-for k, v in {
-    'ECHO': TermiosLFlag(ECHO),
-    'ECHOE': TermiosLFlag(ECHOE),
-    'ECHOK': TermiosLFlag(ECHOK),
-    'ECHONL': TermiosLFlag(ECHONL),
-    'ICANON': TermiosLFlag(ICANON),
-    'IEXTEN': TermiosLFlag(IEXTEN),
-    'ISIG': TermiosLFlag(ISIG),
-    'NOFLSH': TermiosLFlag(NOFLSH),
-    'TOSTOP': TermiosLFlag(TOSTOP)}.items():
-    setattr(TermiosLFlag, k, v)
+
+class FlagDict:
+    """dict of flag"""
+    def __getitem__(self, key):
+        try:
+            return getattr(self, key)
+        except AttributeError as e:
+            raise KeyError(key) from e
 
 cdef class Config:
     """class Config contains config of a pty"""
@@ -291,3 +231,108 @@ cdef class Config:
         if self._termios is not NULL: memcpy(obj._termios, self._termios, sizeof(termios))
         if self._winsize is not NULL: memcpy(obj._winsize, self._winsize, sizeof(winsize))
         return obj
+    def add_flags(self, *flags):
+        """add flags to termios"""
+        if self._termios is NULL: self._alloc(True, False)
+        i, o, c, l = (
+            [TermiosIFlag(self._termios.c_iflag)],
+            [TermiosOFlag(self._termios.c_oflag)],
+            [TermiosCFlag(self._termios.c_cflag)],
+            [TermiosLFlag(self._termios.c_lflag)])
+        for f in flags:
+            if not isinstance(f, TermiosFlag):
+                raise TypeError('TermiosFlag excepted, got {}'.format(type(f).__name__))
+            if isinstance(f, TermiosIFlag):
+                i.append(f)
+            elif isinstance(f, TermiosOFlag):
+                o.append(f)
+            elif isinstance(f, TermiosCFlag):
+                c.append(f)
+            elif isinstance(f, TermiosLFlag):
+                l.append(f)
+        self._termios.c_iflag = TermiosIFlag.join(*i).to_int()
+        self._termios.c_oflag = TermiosOFlag.join(*o).to_int()
+        self._termios.c_cflag = TermiosCFlag.join(*c).to_int()
+        self._termios.c_lflag = TermiosLFlag.join(*l).to_int()
+    def clear_flags(self):
+        """clear flags of termios"""
+        if self._termios is NULL:
+            self._alloc(True, False)
+        memset(self._termios, 0, sizeof(termios))
+    def set_flags(self, *flags):
+        """set flags to termios"""
+        self.clear_flags()
+        self.add_flags(*flags)
+    flag = FlagDict()
+for k, v in {
+    'BRKINT': TermiosIFlag(BRKINT),
+    'ICRNL': TermiosIFlag(ICRNL),
+    'IGNBRK': TermiosIFlag(IGNBRK),
+    'IGNCR': TermiosIFlag(IGNCR),
+    'IGNPAR': TermiosIFlag(IGNPAR),
+    'INLCR': TermiosIFlag(INLCR),
+    'INPCK': TermiosIFlag(INPCK),
+    'ISTRIP': TermiosIFlag(ISTRIP),
+    'IXANY': TermiosIFlag(IXANY),
+    'IXOFF': TermiosIFlag(IXOFF),
+    'IXON': TermiosIFlag(IXON),
+    'PARMRK': TermiosIFlag(PARMRK)}.items():
+    setattr(TermiosIFlag, k, v)
+    setattr(Config.flag, k, v)
+for k, v in {
+    'OPOST': TermiosOFlag(OPOST),
+    'ONLCR': TermiosOFlag(ONLCR),
+    'OCRNL': TermiosOFlag(OCRNL),
+    'ONOCR': TermiosOFlag(ONOCR),
+    'ONLRET': TermiosOFlag(ONLRET),
+    'OFILL': TermiosOFlag(OFILL),
+    'NLDLY': TermiosOFlag(NLDLY),
+    'NL0': TermiosOFlag(NL0),
+    'NL1': TermiosOFlag(NL1),
+    'CRDLY': TermiosOFlag(CRDLY),
+    'CR0': TermiosOFlag(CR0),
+    'CR1': TermiosOFlag(CR1),
+    'CR2': TermiosOFlag(CR2),
+    'CR3': TermiosOFlag(CR3),
+    'TABDLY': TermiosOFlag(TABDLY),
+    'TAB0': TermiosOFlag(TAB0),
+    'TAB1': TermiosOFlag(TAB1),
+    'TAB2': TermiosOFlag(TAB2),
+    'TAB3': TermiosOFlag(TAB3),
+    'BSDLY': TermiosOFlag(BSDLY),
+    'BS0': TermiosOFlag(BS0),
+    'BS1': TermiosOFlag(BS1),
+    'VTDLY': TermiosOFlag(VTDLY),
+    'VT0': TermiosOFlag(VT0),
+    'VT1': TermiosOFlag(VT1),
+    'FFDLY': TermiosOFlag(FFDLY),
+    'FF0': TermiosOFlag(FF0),
+    'FF1': TermiosOFlag(FF1)}.items():
+    setattr(TermiosOFlag, k, v)
+    setattr(Config.flag, k, v)
+for k, v in {
+    'CSIZE': TermiosCFlag(CSIZE),
+    'CS5': TermiosCFlag(CS5),
+    'CS6': TermiosCFlag(CS6),
+    'CS7': TermiosCFlag(CS7),
+    'CS8': TermiosCFlag(CS8),
+    'CSTOPB': TermiosCFlag(CSTOPB),
+    'CREAD': TermiosCFlag(CREAD),
+    'PARENB': TermiosCFlag(PARENB),
+    'PARODD': TermiosCFlag(PARODD),
+    'HUPCL': TermiosCFlag(HUPCL),
+    'CLOCAL': TermiosCFlag(CLOCAL)}.items():
+    setattr(TermiosCFlag, k, v)
+    setattr(Config.flag, k, v)
+for k, v in {
+    'ECHO': TermiosLFlag(ECHO),
+    'ECHOE': TermiosLFlag(ECHOE),
+    'ECHOK': TermiosLFlag(ECHOK),
+    'ECHONL': TermiosLFlag(ECHONL),
+    'ICANON': TermiosLFlag(ICANON),
+    'IEXTEN': TermiosLFlag(IEXTEN),
+    'ISIG': TermiosLFlag(ISIG),
+    'NOFLSH': TermiosLFlag(NOFLSH),
+    'TOSTOP': TermiosLFlag(TOSTOP)}.items():
+    setattr(TermiosLFlag, k, v)
+    setattr(Config.flag, k, v)
