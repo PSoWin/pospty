@@ -3,6 +3,7 @@ from libc.string cimport strerror
 from libc.stddef cimport size_t
 from libc.errno cimport errno
 from posix.ioctl cimport ioctl
+from cpython.version cimport PY_VERSION_HEX
 
 cdef extern from '<termios.h>':
     ctypedef unsigned char	cc_t
@@ -41,7 +42,24 @@ cdef void* safe_calloc(size_t nmemb, size_t size) except NULL:
         raise MemoryError('calloc failed')
     return ptr
 
-class PosixError(OSError):
+class PosptyError(RuntimeError):
+    """base error class for pospty"""
+    pass
+
+if PY_VERSION_HEX >= 0x03040000:
+    class WError(OSError):
+        pass
+else:
+    class WError(OSError):
+        def __init__(self, errno, strerror, filename = None, winerror = None, filename2 = None):
+            super().__init__()
+            self.errno = errno
+            self.strerror = strerror
+            self.filename = filename
+            self.winerror = winerror
+            self.filename2 = filename2
+
+class PosixError(WError, PosptyError):
     """error of system"""
     def __init__(self, errno, strerror, callname):
         """init error with
