@@ -7,6 +7,7 @@ from posix.ioctl cimport ioctl
 from cpython.version cimport PY_VERSION_HEX
 import operator
 from functools import reduce
+import os
 
 cdef extern from '<termios.h>':
     ctypedef unsigned char	cc_t
@@ -100,6 +101,12 @@ cdef extern from '<sys/ioctl.h>':
         unsigned short int ws_ypixel
     enum: TIOCGWINSZ
     enum: TIOCSWINSZ
+
+cdef extern from '<pty.h>':
+    int openpty(int *amaster, int *aslave, char *name, const termios *termp, const winsize *winp)
+
+cdef extern from '<utmp.h>':
+    int login_tty(int fd)
 
 cdef void* safe_malloc(size_t size) except NULL:
     """safe malloc
@@ -275,6 +282,10 @@ cdef class Config:
     def set_initial_size(self, cols, rows, xpixel=0, ypixel=0):
         """set winsize"""
         return self.set_size(cols, rows, xpixel, ypixel)
+    def __init__(self, *flags, winsize=None):
+        """init Config with ``flags`` and ``winsize``"""
+        self.set_flags(*flags)
+        if winsize: self.set_size(*winsize)
 for k, v in {
     'BRKINT': TermiosIFlag(BRKINT),
     'ICRNL': TermiosIFlag(ICRNL),
@@ -347,3 +358,22 @@ for k, v in {
     'TOSTOP': TermiosLFlag(TOSTOP)}.items():
     setattr(TermiosLFlag, k, v)
     setattr(Config.flag, k, v)
+
+class Pty:
+    """class Pty wrappers a pty"""
+    def __init__(self, Config config = Config.default()):
+        """open a pty with ``config``"""
+        cdef int master, slave
+        cdef char name[1024]
+        if openpty(&master, &slave, name, config._termios, config._winsize) == -1:
+            PosixError.raise_errno('openpty')
+        self._master = master
+        self._slave = slave
+        self._name = (<bytes>name).decode()
+    def fork(self):
+        """fork, then child process login the pty"""
+        pid = os.fork()
+        if pid == 0:
+            if login_tty(self._slave) == -1:
+                PosixError.raise_errno()
+        return pid
