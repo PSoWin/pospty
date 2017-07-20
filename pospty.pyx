@@ -1,9 +1,12 @@
 from libc.stdlib cimport malloc, calloc, free
-from libc.string cimport strerror
+from libc.string cimport strerror, memcpy
 from libc.stddef cimport size_t
+from libc.stdint cimport intmax_t
 from libc.errno cimport errno
 from posix.ioctl cimport ioctl
 from cpython.version cimport PY_VERSION_HEX
+import operator
+from functools import reduce
 
 cdef extern from '<termios.h>':
     ctypedef unsigned char	cc_t
@@ -16,6 +19,78 @@ cdef extern from '<termios.h>':
         tcflag_t c_lflag
         cc_t c_cc[NCCS]
     int tcgetattr(int fd, termios *termios_p)
+
+    # Input Modes
+    # The c_iflag field describes the basic terminal input control:
+    enum: BRKINT # Signal interrupt on break.
+    enum: ICRNL # Map CR to NL on input.
+    enum: IGNBRK # Ignore break condition.
+    enum: IGNCR # Ignore CR.
+    enum: IGNPAR # Ignore characters with parity errors.
+    enum: INLCR # Map NL to CR on input.
+    enum: INPCK # Enable input parity check.
+    enum: ISTRIP # Strip character.
+    enum: IXANY # [XSI] Enable any character to restart output.
+    enum: IXOFF # Enable start/stop input control.
+    enum: IXON # Enable start/stop output control.
+    enum: PARMRK # Mark parity errors.
+
+    # Output Modes
+    # The c_oflag field specifies the system treatment of output:
+    enum: OPOST # Post-process output.
+    enum: ONLCR # [XSI] Map NL to CR-NL on output.
+    enum: OCRNL # Map CR to NL on output.
+    enum: ONOCR # No CR output at column 0.
+    enum: ONLRET # NL performs CR function.
+    enum: OFILL # Use fill characters for delay.
+    enum: NLDLY # Select newline delays:
+    enum: NL0 # Newline type 0.
+    enum: NL1 # Newline type 1.
+    enum: CRDLY # Select carriage-return delays:
+    enum: CR0 # Carriage-return delay type 0.
+    enum: CR1 # Carriage-return delay type 1.
+    enum: CR2 # Carriage-return delay type 2.
+    enum: CR3 # Carriage-return delay type 3.
+    enum: TABDLY # Select horizontal-tab delays:
+    enum: TAB0 # Horizontal-tab delay type 0.
+    enum: TAB1 # Horizontal-tab delay type 1.
+    enum: TAB2 # Horizontal-tab delay type 2.
+    enum: TAB3 # Expand tabs to spaces.
+    enum: BSDLY # Select backspace delays:
+    enum: BS0 # Backspace-delay type 0.
+    enum: BS1 # Backspace-delay type 1.
+    enum: VTDLY # Select vertical-tab delays:
+    enum: VT0 # Vertical-tab delay type 0.
+    enum: VT1 # Vertical-tab delay type 1.
+    enum: FFDLY # Select form-feed delays:
+    enum: FF0 # Form-feed delay type 0.
+    enum: FF1 # Form-feed delay type 1.
+
+    # Control Modes
+    # The c_cflag field describes the hardware control of the terminal; not all values specified are required to be supported by the underlying hardware:
+    enum: CSIZE # Character size:
+    enum: CS5 # 5 bits
+    enum: CS6 # 6 bits
+    enum: CS7 # 7 bits
+    enum: CS8 # 8 bits
+    enum: CSTOPB # Send two stop bits, else one.
+    enum: CREAD # Enable receiver.
+    enum: PARENB # Parity enable.
+    enum: PARODD # Odd parity, else even.
+    enum: HUPCL # Hang up on last close.
+    enum: CLOCAL # Ignore modem status lines.
+
+    # Local Modes
+    # The c_lflag field of the argument structure is used to control various terminal functions:
+    enum: ECHO # Enable echo.
+    enum: ECHOE # Echo erase character as error-correcting backspace.
+    enum: ECHOK # Echo KILL.
+    enum: ECHONL # Echo NL.
+    enum: ICANON # Canonical input (erase and kill processing).
+    enum: IEXTEN # Enable extended input character processing.
+    enum: ISIG # Enable signals.
+    enum: NOFLSH # Disable flush after interrupt or quit.
+    enum: TOSTOP # Send SIGTTOU for background output.
 
 cdef extern from '<sys/ioctl.h>':
     cdef struct winsize:
@@ -79,6 +154,103 @@ class PosixError(WError, PosptyError):
         """raise PosixError by ``callname`` and last errno (if errnum is None) or errnum"""
         raise cls.from_errno(callname, errnum)
 
+class Flag:
+    """base class to contain flag"""
+    def to_int(self):
+        """get integer value of this flag"""
+        return self._value
+    def __init__(self, value):
+        """init flag with integer value"""
+        self._value = value
+    @classmethod
+    def join(cls, *flags):
+        """join flags"""
+        return cls(reduce(operator.or_, map(cls.to_int, flags)))
+
+class TermiosFlag(Flag):
+    """flag for termios"""
+    pass
+class TermiosIFlag(TermiosFlag):
+    """flag for termios.c_iflag"""
+    pass
+for k, v in {
+    'BRKINT': TermiosIFlag(BRKINT),
+    'ICRNL': TermiosIFlag(ICRNL),
+    'IGNBRK': TermiosIFlag(IGNBRK),
+    'IGNCR': TermiosIFlag(IGNCR),
+    'IGNPAR': TermiosIFlag(IGNPAR),
+    'INLCR': TermiosIFlag(INLCR),
+    'INPCK': TermiosIFlag(INPCK),
+    'ISTRIP': TermiosIFlag(ISTRIP),
+    'IXANY': TermiosIFlag(IXANY),
+    'IXOFF': TermiosIFlag(IXOFF),
+    'IXON': TermiosIFlag(IXON),
+    'PARMRK': TermiosIFlag(PARMRK)}.items():
+    setattr(TermiosIFlag, k, v)
+class TermiosOFlag(TermiosFlag):
+    """flag for termios.c_oflag"""
+    pass
+for k, v in {
+    'OPOST': TermiosOFlag(OPOST),
+    'ONLCR': TermiosOFlag(ONLCR),
+    'OCRNL': TermiosOFlag(OCRNL),
+    'ONOCR': TermiosOFlag(ONOCR),
+    'ONLRET': TermiosOFlag(ONLRET),
+    'OFILL': TermiosOFlag(OFILL),
+    'NLDLY': TermiosOFlag(NLDLY),
+    'NL0': TermiosOFlag(NL0),
+    'NL1': TermiosOFlag(NL1),
+    'CRDLY': TermiosOFlag(CRDLY),
+    'CR0': TermiosOFlag(CR0),
+    'CR1': TermiosOFlag(CR1),
+    'CR2': TermiosOFlag(CR2),
+    'CR3': TermiosOFlag(CR3),
+    'TABDLY': TermiosOFlag(TABDLY),
+    'TAB0': TermiosOFlag(TAB0),
+    'TAB1': TermiosOFlag(TAB1),
+    'TAB2': TermiosOFlag(TAB2),
+    'TAB3': TermiosOFlag(TAB3),
+    'BSDLY': TermiosOFlag(BSDLY),
+    'BS0': TermiosOFlag(BS0),
+    'BS1': TermiosOFlag(BS1),
+    'VTDLY': TermiosOFlag(VTDLY),
+    'VT0': TermiosOFlag(VT0),
+    'VT1': TermiosOFlag(VT1),
+    'FFDLY': TermiosOFlag(FFDLY),
+    'FF0': TermiosOFlag(FF0),
+    'FF1': TermiosOFlag(FF1)}.items():
+    setattr(TermiosOFlag, k, v)
+class TermiosCFlag(TermiosFlag):
+    """flag for termios.c_cflag"""
+    pass
+for k, v in {
+    'CSIZE': TermiosCFlag(CSIZE),
+    'CS5': TermiosCFlag(CS5),
+    'CS6': TermiosCFlag(CS6),
+    'CS7': TermiosCFlag(CS7),
+    'CS8': TermiosCFlag(CS8),
+    'CSTOPB': TermiosCFlag(CSTOPB),
+    'CREAD': TermiosCFlag(CREAD),
+    'PARENB': TermiosCFlag(PARENB),
+    'PARODD': TermiosCFlag(PARODD),
+    'HUPCL': TermiosCFlag(HUPCL),
+    'CLOCAL': TermiosCFlag(CLOCAL)}.items():
+    setattr(TermiosCFlag, k, v)
+class TermiosLFlag(TermiosFlag):
+    """flag for termios.c_lflag"""
+    pass
+for k, v in {
+    'ECHO': TermiosLFlag(ECHO),
+    'ECHOE': TermiosLFlag(ECHOE),
+    'ECHOK': TermiosLFlag(ECHOK),
+    'ECHONL': TermiosLFlag(ECHONL),
+    'ICANON': TermiosLFlag(ICANON),
+    'IEXTEN': TermiosLFlag(IEXTEN),
+    'ISIG': TermiosLFlag(ISIG),
+    'NOFLSH': TermiosLFlag(NOFLSH),
+    'TOSTOP': TermiosLFlag(TOSTOP)}.items():
+    setattr(TermiosLFlag, k, v)
+
 cdef class Config:
     """class Config contains config of a pty"""
     cdef termios* _termios
@@ -89,10 +261,10 @@ cdef class Config:
     def __dealloc__(self):
         free(self._termios)
         free(self._winsize)
-    def _alloc(self):
+    def _alloc(self, alloc_termios=True, alloc_winsize=True):
         """alloc memory for ``self._termios`` and ``self._winsize``"""
-        self._termios = <termios*>safe_calloc(1, sizeof(termios))
-        self._winsize = <winsize*>safe_calloc(1, sizeof(winsize))
+        if alloc_termios: self._termios = <termios*>safe_calloc(1, sizeof(termios))
+        if alloc_winsize: self._winsize = <winsize*>safe_calloc(1, sizeof(winsize))
     @staticmethod
     def default():
         """create default Config"""
@@ -112,3 +284,10 @@ cdef class Config:
     def from_file(f):
         """create same Config as file ``f`` has"""
         return Config._from_fd(f.fileno())
+    def copy(self):
+        """dup this Config instance"""
+        cdef Config obj = Config.__new__(Config)
+        obj._alloc(self._termios is not NULL, self._winsize is not NULL)
+        if self._termios is not NULL: memcpy(obj._termios, self._termios, sizeof(termios))
+        if self._winsize is not NULL: memcpy(obj._winsize, self._winsize, sizeof(winsize))
+        return obj
