@@ -264,6 +264,17 @@ cdef class Config:
         self.clear_flags()
         self.add_flags(*flags)
     flag = FlagDict()
+    def set_size(self, cols, rows, xpixel=0, ypixel=0):
+        """set winsize"""
+        if self._winsize is NULL:
+            self._alloc(False, True)
+        self._winsize.ws_col = cols
+        self._winsize.ws_row = rows
+        self._winsize.ws_xpixel = xpixel
+        self._winsize.ws_ypixel = ypixel
+    def set_initial_size(self, cols, rows, xpixel=0, ypixel=0):
+        """set winsize"""
+        return self.set_size(cols, rows, xpixel, ypixel)
 for k, v in {
     'BRKINT': TermiosIFlag(BRKINT),
     'ICRNL': TermiosIFlag(ICRNL),
